@@ -1,6 +1,7 @@
-package services
+package api
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/url"
@@ -8,19 +9,37 @@ import (
 	"strings"
 	"time"
 
-	"encoding/json"
-
+	"github.com/dhafinkawakibi/iot_platform/api/controllers"
+	"github.com/dhafinkawakibi/iot_platform/api/models"
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/joho/godotenv"
 )
 
-// StartMqtt is function for running mqtt
-func StartMqtt() {
-	dotenvErr := godotenv.Load()
+var server = controllers.Server{}
 
-	if dotenvErr != nil {
-		fmt.Println(dotenvErr)
-		panic("Failed loading dotenv.")
+func Run() {
+
+	var err error
+	err = godotenv.Load()
+	if err != nil {
+		log.Fatalf("Error getting env, not comming through %v", err)
+	} else {
+		fmt.Println("We are getting the env values")
+	}
+
+	server.Initialize(os.Getenv("DB_DRIVER"), os.Getenv("DB_USER"), os.Getenv("DB_PASSWORD"), os.Getenv("DB_PORT"), os.Getenv("DB_HOST"), os.Getenv("DB_NAME"))
+	RunMqtt()
+	server.Run(":8080")
+}
+
+func RunMqtt() {
+
+	var err error
+	err = godotenv.Load()
+	if err != nil {
+		log.Fatalf("Error getting env, not comming through %v", err)
+	} else {
+		fmt.Println("We are getting the env values")
 	}
 
 	uri, err := url.Parse(os.Getenv("MQTT_URL"))
@@ -36,6 +55,7 @@ func StartMqtt() {
 	}
 
 	go mqttListen(uri, topic)
+
 }
 
 func mqttConnect(clientID string, uri *url.URL) mqtt.Client {
@@ -68,20 +88,30 @@ func mqttListen(uri *url.URL, topic string) {
 }
 
 func mqttPayloadHandler(msg mqtt.Message) {
+	fmt.Println(msg.Topic())
 	topic := strings.Split(msg.Topic(), "/")
 	if len(topic) == 4 {
 		fmt.Printf("CREATE USER")
-		var result map[string]interface{}
-		json.Unmarshal([]byte(string(msg.Payload())), &result)
-		fmt.Println(result["username"])
 	} else if len(topic) == 5 {
 		fmt.Printf("DEVICE-INFO")
-
 	} else if len(topic) == 6 {
 		fmt.Printf("CRUD DEVICE")
-
+		fmt.Println(string(msg.Payload()))
+		CreateDevice(msg.Payload())
 	} else if len(topic) == 7 {
 		fmt.Printf("DATA DEVICE")
 
 	}
+}
+
+func CreateDevice(data []byte) {
+	device := models.Device{}
+	json.Unmarshal(data, &device)
+
+	deviceCreated, err := device.SaveDevice(server.DB)
+
+	if err != nil {
+		fmt.Println(err)
+	}
+	fmt.Println(deviceCreated)
 }
